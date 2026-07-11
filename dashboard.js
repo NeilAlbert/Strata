@@ -1,34 +1,6 @@
 // ============================================================================
-// STRATA - STUDENT TIME MANAGEMENT ADVISOR
-// SUPABASE BACKEND INTEGRATION & ADMINISTRATIVE CONTROLLER
+// STRATA - DASHBOARD WORKSPACE CONTROLLER (dashboard.js)
 // ============================================================================
-
-// ============================================================================
-// SUPABASE CLIENT INITIALIZATION & SECURITY STATEMENT
-// ============================================================================
-/*
- * SECURITY STATEMENT:
- * The Supabase anon/public key below is safe to expose in frontend code because
- * Row Level Security (RLS) policies are active on every database table in Supabase.
- * RLS enforces access control at the database level, meaning that a user can only
- * select, insert, update, or delete their own data in profiles and tasks.
- *
- * CRITICAL CONSTRAINT:
- * This security model only holds true if RLS is enabled and policies are correctly
- * configured and tested for all tables (profiles, tasks, subscription_events) in the
- * database. We must never expose the service_role key in client-side code under any
- * circumstance.
- */
-const SUPABASE_URL = "https://uhncfkodfbujttyykdjs.supabase.co"; // Replace with your Supabase URL
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVobmNma29kZmJ1anR0eXlrZGpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3MjM1NTgsImV4cCI6MjA5OTI5OTU1OH0.lNae77FnLHVpM5ry6CmREwAIT6t3FpD3JML55wN2kbQ"; // Replace with your Supabase Anon Key
-
-// Initialize the Supabase client
-const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
-
-// Warn user if Supabase is not configured yet
-if (!supabase || SUPABASE_URL.includes("your-supabase-project-url")) {
-    console.warn("Strata: Supabase client is not fully configured. Please specify your SUPABASE_URL and SUPABASE_ANON_KEY in app.js.");
-}
 
 // Focus Strategy Tips Array
 const focusTips = [
@@ -62,20 +34,29 @@ const focusTips = [
     }
 ];
 
-// Active Session State Variables (Backend Swapped to Supabase)
-let currentUser = null; // Stores the profiles row of the logged-in user
-let tasks = [];         // Loaded dynamically from public.tasks via Supabase
-let streakCount = 0;    // Loaded from profiles.streak_count
-let lastCompletionDate = ""; // Loaded from profiles.last_completion_date
+// Active State Variables
+let currentUser = null;
+let tasks = [];
+let streakCount = 0;
+let lastCompletionDate = "";
 let currentTipIndex = 0;
 let tipInterval;
-let allUsers = [];      // Admin registry list (only loaded for admin role)
+
+// Listen for Auth Session Ready from Auth Guard
+document.addEventListener('authReady', async (e) => {
+    currentUser = e.detail.profile;
+    
+    // Launch workspace components
+    initTips();
+    initForm();
+    await checkStreakLiveness();
+    await fetchAndRenderTasks();
+});
 
 // ============================================================================
-// HELPER UTILITIES
+// DATE & FORMAT HELPER UTILITIES
 // ============================================================================
 
-// Calculate relative date string YYYY-MM-DD
 function getRelativeDateString(daysFromToday) {
     const today = new Date();
     today.setDate(today.getDate() + daysFromToday);
@@ -85,7 +66,6 @@ function getRelativeDateString(daysFromToday) {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-// Get Today's Date String YYYY-MM-DD
 function getTodayDateString() {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -94,30 +74,17 @@ function getTodayDateString() {
     return `${yyyy}-${mm}-${dd}`;
 }
 
-// Get difference in days (local time)
 function getDaysDifference(dueDateStr) {
     const today = new Date();
     today.setHours(0,0,0,0);
     
-    const due = new Date(dueDateStr + 'T00:00:00'); // enforce local time parsing
+    const due = new Date(dueDateStr + 'T00:00:00');
     due.setHours(0,0,0,0);
     
     const diffTime = due.getTime() - today.getTime();
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 }
 
-// Format date to human-readable format
-function formatDisplayDate(dateStr) {
-    const date = new Date(dateStr + 'T00:00:00');
-    return date.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
-}
-
-// Escape HTML string
 function escapeHTML(str) {
     if (!str) return '';
     return str.replace(/[&<>'"]/g, 
@@ -131,7 +98,6 @@ function escapeHTML(str) {
     );
 }
 
-// Get Deadline text badge content
 function getDeadlineLabel(dueDateStr) {
     const diff = getDaysDifference(dueDateStr);
     if (diff < 0) {
@@ -145,18 +111,6 @@ function getDeadlineLabel(dueDateStr) {
     }
 }
 
-// Parse Student ID or Email input
-function parseIdInput(input) {
-    const trimmed = input.trim();
-    if (trimmed.includes('@')) {
-        const studentId = trimmed.split('@')[0];
-        return { email: trimmed, studentId: studentId };
-    } else {
-        return { email: `${trimmed.toLowerCase()}@strata.univ`, studentId: trimmed };
-    }
-}
-
-// Map task database row to JS format
 function mapTaskFromDb(dbTask) {
     return {
         id: dbTask.id,
@@ -272,10 +226,9 @@ function triggerConfetti(x, y, color) {
 }
 
 // ============================================================================
-// STATE LOAD & DATABASE SYNC
+// STATE SYNC & FETCH
 // ============================================================================
 
-// Fetch and render user tasks from Supabase tasks table
 async function fetchAndRenderTasks() {
     if (!currentUser || !supabase) return;
     
@@ -290,10 +243,8 @@ async function fetchAndRenderTasks() {
         return;
     }
     
-    // Map back into client formats
     tasks = dbTasks.map(mapTaskFromDb);
     
-    // Render Components
     renderTodayStrata();
     renderScheduleLists();
     renderCompletedTasks();
@@ -302,7 +253,6 @@ async function fetchAndRenderTasks() {
     updateProgress(todayPlan);
 }
 
-// Get All Tasks scheduled for Today
 function getTodayPlanTasks() {
     return tasks.filter(task => {
         const diff = getDaysDifference(task.dueDate);
@@ -312,7 +262,7 @@ function getTodayPlanTasks() {
 }
 
 // ============================================================================
-// CRUD TASK OPERATIONS (SUPABASE CLIENT SWAPPED)
+// CRUD TASK OPERATIONS (SUPABASE CLIENT BACKED)
 // ============================================================================
 
 async function completeTask(id) {
@@ -331,7 +281,6 @@ async function completeTask(id) {
         return;
     }
     
-    // Lock in Focus Streak parameters
     await updateStreakOnCompletion();
     await fetchAndRenderTasks();
     showToast(`Completed: "${task.title}"`);
@@ -400,7 +349,7 @@ async function toggleFocusToday(id) {
 }
 
 // ============================================================================
-// BALANCED CAIRN STREAK PERSISTENCE
+// BALANCED STREAK SYSTEM
 // ============================================================================
 
 async function checkStreakLiveness() {
@@ -409,7 +358,6 @@ async function checkStreakLiveness() {
     const today = getTodayDateString();
     const yesterday = getRelativeDateString(-1);
     
-    // Refresh latest profiles data
     const { data: profile, error } = await supabase
         .from('profiles')
         .select('streak_count, last_completion_date')
@@ -422,7 +370,6 @@ async function checkStreakLiveness() {
     let lastDate = profile.last_completion_date;
     
     if (lastDate && lastDate !== today && lastDate !== yesterday) {
-        // Streak broken
         currentStreak = 0;
         await supabase
             .from('profiles')
@@ -441,7 +388,6 @@ async function updateStreakOnCompletion() {
     const today = getTodayDateString();
     const yesterday = getRelativeDateString(-1);
     
-    // Refresh latest profiles data
     const { data: profile, error } = await supabase
         .from('profiles')
         .select('streak_count, last_completion_date')
@@ -453,10 +399,7 @@ async function updateStreakOnCompletion() {
     let newStreak = profile.streak_count || 0;
     let lastDate = profile.last_completion_date;
     
-    if (lastDate === today) {
-        // Streak already locked today
-        return;
-    }
+    if (lastDate === today) return;
     
     if (lastDate === yesterday) {
         newStreak++;
@@ -466,7 +409,6 @@ async function updateStreakOnCompletion() {
     
     lastDate = today;
     
-    // Save to profiles
     const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -482,7 +424,6 @@ async function updateStreakOnCompletion() {
     }
 }
 
-// Render Streak Cairn Icon & text
 function updateStreakVisuals(streak) {
     const container = document.getElementById('cairn-container');
     if (!container) return;
@@ -522,10 +463,9 @@ function updateStreakVisuals(streak) {
 }
 
 // ============================================================================
-// INTERFACE RENDERING LOGIC
+// COMPONENT RENDER ENGINES
 // ============================================================================
 
-// Progress Circle Ring rendering
 function updateProgress(todayTasks) {
     const total = todayTasks.length;
     const completed = todayTasks.filter(t => t.completed).length;
@@ -551,7 +491,6 @@ function updateProgress(todayTasks) {
     }
 }
 
-// Strata Stack Rendering
 function renderTodayStrata() {
     const strataContainer = document.getElementById('strata-container');
     const ruler = document.getElementById('strata-ruler');
@@ -658,7 +597,7 @@ function renderTodayStrata() {
         });
     });
     
-    // Draw Ruler ticks
+    // Draw Ruler
     ruler.innerHTML = '';
     const steps = Math.floor(totalHours);
     for (let h = 0; h <= steps; h++) {
@@ -686,7 +625,6 @@ function renderTodayStrata() {
     updateAdvisorBox(todayTasks, totalHours);
 }
 
-// Advisor Box Recommendations engine
 function updateAdvisorBox(todayTasks, totalHours) {
     const textEl = document.getElementById('advisor-text');
     if (!textEl) return;
@@ -724,7 +662,6 @@ function updateAdvisorBox(todayTasks, totalHours) {
     textEl.innerHTML = recommendation.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 }
 
-// Render This Week / Upcoming lists
 function renderScheduleLists() {
     const weekList = document.getElementById('week-task-list');
     const upcomingList = document.getElementById('upcoming-task-list');
@@ -740,7 +677,7 @@ function renderScheduleLists() {
         if (task.completed) return;
         
         const diff = getDaysDifference(task.dueDate);
-        if (diff <= 0) return; // Due today or overdue, stays in Strata
+        if (diff <= 0) return;
         
         const suggestion = calculateSuggestedHours(task.priority, task.dueDate);
         task.suggestedHours = suggestion.hours;
@@ -785,7 +722,6 @@ function renderScheduleLists() {
     }
 }
 
-// Generate DOM task card
 function createTaskCard(task) {
     const card = document.createElement('div');
     card.className = `task-card ${task.focusToday ? 'focus-active' : ''}`;
@@ -844,7 +780,6 @@ function createTaskCard(task) {
     return card;
 }
 
-// Completed tasks section render
 function renderCompletedTasks() {
     const listContainer = document.querySelector('.schedule-lists-container');
     if (!listContainer) return;
@@ -909,7 +844,7 @@ function renderCompletedTasks() {
 }
 
 // ============================================================================
-// FOCUS STRATEGIES CAROUSEL
+// TIPS SLIDER
 // ============================================================================
 
 function initTips() {
@@ -963,7 +898,7 @@ function showTip(index) {
 }
 
 // ============================================================================
-// TASK CREATOR FORM
+// FORM BINDER
 // ============================================================================
 
 function initForm() {
@@ -1007,7 +942,6 @@ function initForm() {
         
         await fetchAndRenderTasks();
         
-        // Reset inputs
         document.getElementById('task-title').value = '';
         document.getElementById('task-course').value = '';
         deadlineInput.value = todayStr;
@@ -1016,535 +950,3 @@ function initForm() {
         showToast(`Created: "${title}" (${course})`);
     });
 }
-
-// ============================================================================
-// AUTHENTICATION STATE & CONTROLS (SUPABASE CLIENT SWAPPED)
-// ============================================================================
-
-function showLoginForm() {
-    const loginForm = document.getElementById('login-form');
-    const signupForm = document.getElementById('signup-form');
-    const toggleLoginTab = document.getElementById('toggle-login-tab');
-    const toggleSignupTab = document.getElementById('toggle-signup-tab');
-    
-    if (loginForm && signupForm) {
-        loginForm.classList.remove('hidden');
-        signupForm.classList.add('hidden');
-        toggleLoginTab.classList.add('active');
-        toggleSignupTab.classList.remove('active');
-        clearAuthErrors();
-    }
-}
-
-function showSignupForm() {
-    const loginForm = document.getElementById('login-form');
-    const signupForm = document.getElementById('signup-form');
-    const toggleLoginTab = document.getElementById('toggle-login-tab');
-    const toggleSignupTab = document.getElementById('toggle-signup-tab');
-    
-    if (loginForm && signupForm) {
-        loginForm.classList.add('hidden');
-        signupForm.classList.remove('hidden');
-        toggleLoginTab.classList.remove('active');
-        toggleSignupTab.classList.add('active');
-        clearAuthErrors();
-    }
-}
-
-function clearAuthErrors() {
-    document.querySelectorAll('.error-message').forEach(el => el.textContent = '');
-}
-
-function setFieldError(fieldId, errorText) {
-    const errorEl = document.getElementById(fieldId);
-    if (errorEl) {
-        errorEl.textContent = errorText;
-    }
-}
-
-function initAuth() {
-    const loginForm = document.getElementById('login-form');
-    const signupForm = document.getElementById('signup-form');
-    const toggleLoginTab = document.getElementById('toggle-login-tab');
-    const toggleSignupTab = document.getElementById('toggle-signup-tab');
-    const linkToSignup = document.getElementById('link-to-signup');
-    const linkToLogin = document.getElementById('link-to-login');
-    const logoutBtn = document.getElementById('logout-btn');
-    
-    if (toggleLoginTab) toggleLoginTab.addEventListener('click', showLoginForm);
-    if (toggleSignupTab) toggleSignupTab.addEventListener('click', showSignupForm);
-    if (linkToSignup) linkToSignup.addEventListener('click', (e) => { e.preventDefault(); showSignupForm(); });
-    if (linkToLogin) linkToLogin.addEventListener('click', (e) => { e.preventDefault(); showLoginForm(); });
-    
-    const inputs = document.querySelectorAll('.auth-card input');
-    inputs.forEach(input => {
-        input.addEventListener('input', () => {
-            const errorEl = document.getElementById(input.id + '-error');
-            if (errorEl) errorEl.textContent = '';
-        });
-    });
-    
-    // Login Submission (Supabase Swap)
-    if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            clearAuthErrors();
-            
-            const rawId = document.getElementById('login-id').value;
-            const password = document.getElementById('login-password').value;
-            
-            if (!rawId || !password) return;
-            
-            const { email } = parseIdInput(rawId);
-            
-            const submitBtn = loginForm.querySelector('.submit-btn');
-            const origText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<span>Logging in...</span>';
-            submitBtn.disabled = true;
-            
-            const { error } = await supabase.auth.signInWithPassword({
-                email: email,
-                password: password
-            });
-            
-            submitBtn.innerHTML = origText;
-            submitBtn.disabled = false;
-            
-            if (error) {
-                setFieldError('login-password-error', error.message);
-                return;
-            }
-            
-            loginForm.reset();
-            showToast("Logged in successfully");
-        });
-    }
-    
-    // Signup Submission (Supabase Swap)
-    if (signupForm) {
-        signupForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            clearAuthErrors();
-            
-            const name = document.getElementById('signup-name').value.trim();
-            const rawId = document.getElementById('signup-id').value;
-            const password = document.getElementById('signup-password').value;
-            const confirm = document.getElementById('signup-confirm').value;
-            
-            let hasError = false;
-            
-            if (password.length < 6) {
-                setFieldError('signup-password-error', 'Password must be at least 6 characters');
-                hasError = true;
-            }
-            
-            if (password !== confirm) {
-                setFieldError('signup-confirm-error', 'Passwords don\'t match');
-                hasError = true;
-            }
-            
-            if (hasError) return;
-            
-            const { email, studentId } = parseIdInput(rawId);
-            
-            const submitBtn = signupForm.querySelector('.submit-btn');
-            const origText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<span>Creating Account...</span>';
-            submitBtn.disabled = true;
-            
-            const { error } = await supabase.auth.signUp({
-                email: email,
-                password: password,
-                options: {
-                    data: {
-                        name: name,
-                        student_id: studentId
-                    }
-                }
-            });
-            
-            submitBtn.innerHTML = origText;
-            submitBtn.disabled = false;
-            
-            if (error) {
-                setFieldError('signup-id-error', error.message);
-                return;
-            }
-            
-            signupForm.reset();
-            showToast("Sign up successful. Welcome!");
-        });
-    }
-    
-    // Logout Action
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', async () => {
-            if (supabase) {
-                const { error } = await supabase.auth.signOut();
-                if (error) {
-                    showToast("Error signing out: " + error.message);
-                } else {
-                    window.location.hash = '';
-                    window.history.pushState(null, "", "/");
-                    showToast("Logged out successfully");
-                }
-            }
-        });
-    }
-}
-
-// ============================================================================
-// ROUTING & ACCESS CONTROL (ADMIN GATEWAY)
-// ============================================================================
-
-function handleRouting() {
-    const authView = document.getElementById('auth-view');
-    const dashboardView = document.getElementById('dashboard-view');
-    const adminView = document.getElementById('admin-view');
-    const adminToggleBtn = document.getElementById('admin-toggle-btn');
-    
-    if (!currentUser) {
-        authView.classList.remove('hidden');
-        dashboardView.classList.add('hidden');
-        adminView.classList.add('hidden');
-        return;
-    }
-    
-    const hash = window.location.hash;
-    const path = window.location.pathname;
-    const wantsAdmin = (hash === '#admin' || path.endsWith('/admin'));
-    
-    if (wantsAdmin) {
-        if (currentUser.role === 'admin') {
-            // Authorized Admin View Transition
-            dashboardView.classList.add('hidden');
-            adminView.classList.remove('hidden');
-            
-            adminToggleBtn.innerHTML = `
-                <span>Dashboard</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 4px;">
-                    <rect x="3" y="3" width="7" height="9"/>
-                    <rect x="14" y="3" width="7" height="5"/>
-                    <rect x="14" y="12" width="7" height="9"/>
-                    <rect x="3" y="16" width="7" height="5"/>
-                </svg>
-            `;
-            adminToggleBtn.title = "Return to Dashboard";
-            
-            // Fetch platform metrics & user registry
-            loadAdminStats();
-            loadAdminUsers();
-        } else {
-            // Access Denied Security Redirect
-            showToast("Access Denied: Administrative privileges required.");
-            window.location.hash = '';
-            window.history.pushState(null, "", "/");
-            switchToMainDashboard();
-        }
-    } else {
-        switchToMainDashboard();
-    }
-}
-
-function switchToMainDashboard() {
-    const dashboardView = document.getElementById('dashboard-view');
-    const adminView = document.getElementById('admin-view');
-    const adminToggleBtn = document.getElementById('admin-toggle-btn');
-    
-    dashboardView.classList.remove('hidden');
-    adminView.classList.add('hidden');
-    
-    if (currentUser && currentUser.role === 'admin') {
-        adminToggleBtn.innerHTML = `
-            <span>Admin Panel</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 4px;">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-        `;
-        adminToggleBtn.title = "Open Admin Panel";
-    }
-}
-
-// ============================================================================
-// ADMIN CONSOLE CONTROLLERS
-// ============================================================================
-
-async function loadAdminStats() {
-    if (!currentUser || currentUser.role !== 'admin' || !supabase) return;
-    
-    // Fetch stats using secure database RPC (bypasses RLS aggregates limit securely)
-    const { data, error } = await supabase.rpc('get_platform_stats');
-    
-    if (error) {
-        console.error("Error loading platform stats:", error);
-        return;
-    }
-    
-    if (data && data.length > 0) {
-        const stats = data[0];
-        document.getElementById('stat-total-users').textContent = stats.total_users;
-        document.getElementById('stat-active-users').textContent = stats.active_users_7d;
-        document.getElementById('stat-premium-users').innerHTML = `
-            ${stats.premium_users} 
-            <span class="stat-subtext">/ ${stats.free_users} free</span>
-        `;
-        document.getElementById('stat-total-tasks').textContent = stats.total_tasks;
-        
-        const rate = stats.total_tasks > 0 ? Math.round((stats.completed_tasks / stats.total_tasks) * 100) : 0;
-        document.getElementById('stat-completion-rate').textContent = `${rate}%`;
-    }
-}
-
-async function loadAdminUsers() {
-    if (!currentUser || currentUser.role !== 'admin' || !supabase) return;
-    
-    const { data: profiles, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('name', { ascending: true });
-        
-    if (error) {
-        showToast("Error loading user registry: " + error.message);
-        return;
-    }
-    
-    allUsers = profiles;
-    renderAdminUsers();
-}
-
-function renderAdminUsers() {
-    const tbody = document.getElementById('admin-users-tbody');
-    if (!tbody) return;
-    
-    const searchQuery = document.getElementById('user-search').value.toLowerCase().trim();
-    const roleFilter = document.getElementById('user-role-filter').value;
-    const planFilter = document.getElementById('user-plan-filter').value;
-    
-    const filtered = allUsers.filter(user => {
-        const nameMatch = user.name.toLowerCase().includes(searchQuery);
-        const idMatch = user.student_id.toLowerCase().includes(searchQuery);
-        const queryMatch = !searchQuery || nameMatch || idMatch;
-        const roleMatch = roleFilter === 'all' || user.role === roleFilter;
-        const planMatch = planFilter === 'all' || user.plan === planFilter;
-        return queryMatch && roleMatch && planMatch;
-    });
-    
-    if (filtered.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="table-empty-state">No matching users found.</td>
-            </tr>
-        `;
-        return;
-    }
-    
-    tbody.innerHTML = '';
-    filtered.forEach(user => {
-        const tr = document.createElement('tr');
-        const isSelf = user.id === currentUser.id;
-        
-        const joinedDate = new Date(user.created_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
-        const lastActive = new Date(user.last_login_at).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-        
-        const deleteButton = isSelf ? 
-            `<button class="action-btn danger" disabled style="opacity: 0.4; cursor: not-allowed;">Delete</button>` : 
-            `<button class="action-btn danger delete-user-btn" data-id="${user.id}">Delete</button>`;
-            
-        const togglePlanText = user.plan === 'premium' ? 'Make Free' : 'Make Premium';
-        const toggleRoleText = user.role === 'admin' ? 'Make User' : 'Make Admin';
-        
-        tr.innerHTML = `
-            <td><strong>${escapeHTML(user.name)}</strong>${isSelf ? ' <span style="font-size: 0.7rem; opacity: 0.6;">(You)</span>' : ''}</td>
-            <td><code>${escapeHTML(user.student_id)}</code></td>
-            <td><span class="plan-badge ${user.plan}">${user.plan}</span></td>
-            <td><span class="role-badge ${user.role}">${user.role}</span></td>
-            <td style="color: var(--color-steel); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${joinedDate}</td>
-            <td style="color: var(--color-steel); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem;">${lastActive}</td>
-            <td>
-                <div class="actions-cell">
-                    <button class="action-btn toggle-plan-btn">${togglePlanText}</button>
-                    <button class="action-btn toggle-role-btn" ${isSelf ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>${toggleRoleText}</button>
-                    ${deleteButton}
-                </div>
-            </td>
-        `;
-        
-        // Toggle user billing plan
-        tr.querySelector('.toggle-plan-btn').addEventListener('click', async () => {
-            const nextPlan = user.plan === 'premium' ? 'free' : 'premium';
-            const { error } = await supabase
-                .from('profiles')
-                .update({ plan: nextPlan })
-                .eq('id', user.id);
-                
-            if (error) {
-                showToast("Error updating plan: " + error.message);
-            } else {
-                showToast(`Updated ${user.name} to ${nextPlan} plan`);
-                await loadAdminUsers();
-                await loadAdminStats();
-            }
-        });
-        
-        // Toggle administrative role
-        if (!isSelf) {
-            tr.querySelector('.toggle-role-btn').addEventListener('click', async () => {
-                const nextRole = user.role === 'admin' ? 'user' : 'admin';
-                const { error } = await supabase
-                    .from('profiles')
-                    .update({ role: nextRole })
-                    .eq('id', user.id);
-                    
-                if (error) {
-                    showToast("Error updating role: " + error.message);
-                } else {
-                    showToast(`Updated ${user.name} to ${nextRole} role`);
-                    await loadAdminUsers();
-                    await loadAdminStats();
-                }
-            });
-            
-            // Delete user account via secure RPC (cascades to public tables)
-            tr.querySelector('.delete-user-btn').addEventListener('click', async () => {
-                if (confirm(`Are you absolutely sure you want to permanently delete the account for ${user.name}? This action is irreversible.`)) {
-                    const { error } = await supabase.rpc('delete_user', { user_uuid: user.id });
-                    
-                    if (error) {
-                        showToast("Error deleting user: " + error.message);
-                    } else {
-                        showToast(`Deleted user account: ${user.name}`);
-                        await loadAdminUsers();
-                        await loadAdminStats();
-                    }
-                }
-            });
-        }
-        
-        tbody.appendChild(tr);
-    });
-}
-
-function initAdminControls() {
-    const searchInput = document.getElementById('user-search');
-    const roleFilter = document.getElementById('user-role-filter');
-    const planFilter = document.getElementById('user-plan-filter');
-    
-    if (searchInput) searchInput.addEventListener('input', renderAdminUsers);
-    if (roleFilter) roleFilter.addEventListener('change', renderAdminUsers);
-    if (planFilter) planFilter.addEventListener('change', renderAdminUsers);
-}
-
-// ============================================================================
-// APPLICATION INITIALIZATION & REACTIVE STATE HANDLER
-// ============================================================================
-
-document.addEventListener('DOMContentLoaded', () => {
-    // Set Header display date
-    const dateEl = document.getElementById('current-date');
-    if (dateEl) {
-        dateEl.textContent = formatDisplayDate(getTodayDateString());
-    }
-    
-    // Bind base elements
-    initAuth();
-    initTips();
-    initForm();
-    initAdminControls();
-    
-    // Bind admin console button
-    const adminToggleBtn = document.getElementById('admin-toggle-btn');
-    if (adminToggleBtn) {
-        adminToggleBtn.addEventListener('click', () => {
-            const isCurrentlyAdmin = window.location.hash === '#admin' || window.location.pathname.endsWith('/admin');
-            if (isCurrentlyAdmin) {
-                window.location.hash = '';
-                window.history.pushState(null, "", "/");
-                handleRouting();
-            } else {
-                window.location.hash = '#admin';
-                handleRouting();
-            }
-        });
-    }
-    
-    // Handle manual routing updates
-    window.addEventListener('hashchange', handleRouting);
-    window.addEventListener('popstate', handleRouting);
-    
-    // Listen to Supabase Auth State Changes (Reactive Engine)
-    if (supabase) {
-        supabase.auth.onAuthStateChange(async (event, session) => {
-            const authView = document.getElementById('auth-view');
-            const dashboardView = document.getElementById('dashboard-view');
-            const adminView = document.getElementById('admin-view');
-            const appHeader = document.getElementById('app-header');
-            
-            if (session) {
-                // User is authenticated
-                const { data: profile, error } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', session.user.id)
-                    .single();
-                    
-                if (error || !profile) {
-                    console.error("Failed to load user profile:", error);
-                    showToast("Failed to load user profile records.");
-                    await supabase.auth.signOut();
-                    return;
-                }
-                
-                currentUser = profile;
-                
-                // Track last login timestamp
-                await supabase.from('profiles')
-                    .update({ last_login_at: new Date().toISOString() })
-                    .eq('id', profile.id);
-                
-                // Load credentials in header
-                document.getElementById('user-display-name').textContent = profile.name;
-                appHeader.classList.remove('hidden');
-                
-                // Show admin button if role permits
-                if (profile.role === 'admin') {
-                    adminToggleBtn.classList.remove('hidden');
-                } else {
-                    adminToggleBtn.classList.add('hidden');
-                }
-                
-                // Initialize Router Gate
-                handleRouting();
-                
-                // Process streaks & render
-                await checkStreakLiveness();
-                await fetchAndRenderTasks();
-            } else {
-                // User is logged out
-                currentUser = null;
-                tasks = [];
-                streakCount = 0;
-                lastCompletionDate = "";
-                
-                authView.classList.remove('hidden');
-                dashboardView.classList.add('hidden');
-                adminView.classList.add('hidden');
-                appHeader.classList.add('hidden');
-                
-                showLoginForm();
-            }
-        });
-    } else {
-        showToast("Supabase configuration missing or invalid. Check console.");
-    }
-});

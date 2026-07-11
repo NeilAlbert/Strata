@@ -1783,3 +1783,35 @@ body {
     border-color: #c95c5c;
 }
 
+/* Header Navigation Bar Styles */
+.header-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-right: 16px;
+}
+
+.nav-link {
+    color: var(--color-pale);
+    text-decoration: none;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid transparent;
+}
+
+.nav-link:hover {
+    color: var(--color-white);
+    background-color: rgba(237, 239, 240, 0.05);
+}
+
+.nav-link.active {
+    color: var(--color-sky);
+    background-color: rgba(91, 155, 224, 0.1);
+    border-color: rgba(91, 155, 224, 0.25);
+}
+
+

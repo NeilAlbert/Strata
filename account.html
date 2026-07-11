@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Account Settings — Strata</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%2230%22 fill=%22%235B9BE0%22 y=%2210%22 rx=%225%22/><rect width=%22100%22 height=%2230%22 fill=%22%2386ABB9%22 y=%2245%22 rx=%225%22/><rect width=%22100%22 height=%2230%22 fill=%22%23A9C4CB%22 y=%2280%22 rx=%225%22/></svg>">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabaseClient.js"></script>
+    <script src="auth-guard.js"></script>
+</head>
+<body>
+    <!-- Background Decorative Blobs for Glassmorphism -->
+    <div class="bg-blobs" aria-hidden="true">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- Shared Header Root -->
+    <div id="header-root"></div>
+
+    <main class="app-container" style="max-width: 600px;">
+        <div class="admin-dashboard-header">
+            <h2 class="admin-title">Account Settings</h2>
+            <p class="admin-subtitle">Manage your profile, billing plan preferences, and session state</p>
+        </div>
+
+        <!-- Profile Details Panel -->
+        <div class="panel" style="margin-bottom: 24px;">
+            <h3 class="panel-title" style="margin-bottom: 18px;">Profile Information</h3>
+            <div class="form-group" style="margin-bottom: 16px;">
+                <span class="form-label">Full Name</span>
+                <input type="text" id="profile-name" class="form-input" readonly style="background-color: var(--color-mist); cursor: not-allowed;">
+            </div>
+            <div class="form-group" style="margin-bottom: 16px;">
+                <span class="form-label">Student ID</span>
+                <input type="text" id="profile-student-id" class="form-input" readonly style="background-color: var(--color-mist); cursor: not-allowed;">
+            </div>
+            <div class="form-group">
+                <span class="form-label">System Role</span>
+                <input type="text" id="profile-role" class="form-input" readonly style="background-color: var(--color-mist); cursor: not-allowed; text-transform: uppercase; font-family: 'Space Grotesk', sans-serif; font-weight: 600;">
+            </div>
+        </div>
+
+        <!-- Plan / Upgrade Panel -->
+        <div class="panel">
+            <h3 class="panel-title" style="margin-bottom: 8px;">Subscription Billing Plan</h3>
+            <p class="panel-subtitle" style="margin-bottom: 20px;">Toggle your Strata tier access level</p>
+            
+            <div style="display: flex; align-items: center; justify-content: space-between; background-color: var(--color-mist); padding: 16px 20px; border-radius: 12px; border: 1px solid var(--color-border); margin-bottom: 20px;">
+                <div>
+                    <span class="form-label" style="font-size: 0.65rem;">Current Tier</span>
+                    <h4 style="font-family: 'Space Grotesk', sans-serif; font-size: 1.2rem; font-weight: 700; color: var(--color-ink); text-transform: uppercase; margin-top: 2px;" id="current-plan-display">Free</h4>
+                </div>
+                <span class="plan-badge free" id="plan-badge-display">free</span>
+            </div>
+
+            <div style="display: flex; gap: 12px;">
+                <button id="upgrade-plan-btn" class="submit-btn" style="flex: 1; margin-top: 0; background-color: var(--color-sky);">
+                    <span>Upgrade to Premium</span>
+                </button>
+                <button id="downgrade-plan-btn" class="submit-btn danger" style="flex: 1; margin-top: 0; background-color: transparent; border: 1px solid var(--color-border); color: #c95c5c; cursor: pointer; border-radius: 8px; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.95rem;">
+                    <span>Downgrade to Free</span>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Global Footer -->
+    <div id="footer-root">
+        <footer class="app-footer">
+            <p>&copy; 2026 Strata Time Management Advisor.</p>
+        </footer>
+    </div>
+
+    <!-- Toast notification container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="account.js"></script>
+</body>
+</html>
