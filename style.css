@@ -1734,6 +1734,7 @@ body {
 }
 
 .admin-toggle-btn svg {
+    margin-left: 4px;
     transition: transform var(--transition-medium);
 }
 
