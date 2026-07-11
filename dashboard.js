@@ -364,17 +364,28 @@ async function checkStreakLiveness() {
         .eq('id', currentUser.id)
         .single();
         
-    if (error || !profile) return;
+    if (error) {
+        console.error("Error checking streak liveness:", error);
+        showToast("Error updating streak: " + error.message);
+        return;
+    }
+    
+    if (!profile) return;
     
     let currentStreak = profile.streak_count || 0;
     let lastDate = profile.last_completion_date;
     
     if (lastDate && lastDate !== today && lastDate !== yesterday) {
         currentStreak = 0;
-        await supabase
+        const { error: resetError } = await supabase
             .from('profiles')
             .update({ streak_count: 0 })
             .eq('id', currentUser.id);
+            
+        if (resetError) {
+            console.error("Error resetting streak count:", resetError);
+            showToast("Error resetting streak: " + resetError.message);
+        }
     }
     
     streakCount = currentStreak;
@@ -394,7 +405,13 @@ async function updateStreakOnCompletion() {
         .eq('id', currentUser.id)
         .single();
         
-    if (error || !profile) return;
+    if (error) {
+        console.error("Error fetching profile for streak increment:", error);
+        showToast("Error updating streak: " + error.message);
+        return;
+    }
+    
+    if (!profile) return;
     
     let newStreak = profile.streak_count || 0;
     let lastDate = profile.last_completion_date;
@@ -417,7 +434,10 @@ async function updateStreakOnCompletion() {
         })
         .eq('id', currentUser.id);
         
-    if (!updateError) {
+    if (updateError) {
+        console.error("Error saving updated streak:", updateError);
+        showToast("Error saving streak: " + updateError.message);
+    } else {
         streakCount = newStreak;
         lastCompletionDate = lastDate;
         updateStreakVisuals(streakCount);

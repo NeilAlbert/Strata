@@ -75,6 +75,7 @@ async function loadAdminStats() {
     
     if (error) {
         console.error("Error loading platform stats:", error);
+        showToast("Error loading platform stats: " + error.message);
         return;
     }
     

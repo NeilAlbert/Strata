@@ -87,17 +87,14 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 8. Trigger Function: Prevent non-admins from updating critical profile fields
+-- 8. Trigger Function: Prevent non-admins from updating critical profile fields (role)
 CREATE OR REPLACE FUNCTION public.check_profile_changes()
 RETURNS TRIGGER SECURITY DEFINER AS $$
 BEGIN
-    -- If not an admin, check that role and plan are not modified
+    -- If not an admin, check that role is not modified
     IF NOT public.is_admin() THEN
         IF OLD.role IS DISTINCT FROM NEW.role THEN
             RAISE EXCEPTION 'Only administrators can modify user roles.';
-        END IF;
-        IF OLD.plan IS DISTINCT FROM NEW.plan THEN
-            RAISE EXCEPTION 'Only administrators can modify user plans.';
         END IF;
     END IF;
     RETURN NEW;

@@ -33,16 +33,21 @@
     }
     
     // Update last active login timestamp
-    await supabase.from('profiles')
+    const { error: updateError } = await supabase.from('profiles')
         .update({ last_login_at: new Date().toISOString() })
         .eq('id', profile.id);
+        
+    if (updateError) {
+        console.error("Failed to update last login timestamp:", updateError);
+    }
         
     // Save to window scope for page-specific JS access
     window.currentUser = profile;
     window.currentSession = session;
     
     // 3. Admin Access Control Check
-    const isEditingAdmin = window.location.pathname.endsWith('admin.html');
+    const path = window.location.pathname;
+    const isEditingAdmin = path.endsWith('admin.html') || path.endsWith('/admin');
     if (isEditingAdmin && profile.role !== 'admin') {
         window.location.href = "dashboard.html";
         return;
@@ -92,12 +97,12 @@ async function injectGlobalHeader(profile) {
         }
         
         // Highlight active navigation tab
-        const path = window.location.pathname;
-        if (path.endsWith('dashboard.html')) {
+        const currentPath = window.location.pathname;
+        if (currentPath.endsWith('dashboard.html') || currentPath.endsWith('/dashboard')) {
             document.getElementById('nav-dashboard')?.classList.add('active');
-        } else if (path.endsWith('account.html')) {
+        } else if (currentPath.endsWith('account.html') || currentPath.endsWith('/account')) {
             document.getElementById('nav-account')?.classList.add('active');
-        } else if (path.endsWith('admin.html')) {
+        } else if (currentPath.endsWith('admin.html') || currentPath.endsWith('/admin')) {
             document.getElementById('nav-admin')?.classList.add('active');
         }
         
